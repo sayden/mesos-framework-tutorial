@@ -46,6 +46,22 @@ func (exec *exampleExecutor) Disconnected(exec.ExecutorDriver) {
 	fmt.Println("Executor disconnected.")
 }
 
+func (exec *exampleExecutor) KillTask(exec.ExecutorDriver, *mesos.TaskID) {
+	fmt.Println("Kill task")
+}
+
+func (exec *exampleExecutor) FrameworkMessage(driver exec.ExecutorDriver, msg string) {
+	fmt.Println("Got framework message: ", msg)
+}
+
+func (exec *exampleExecutor) Shutdown(exec.ExecutorDriver) {
+	fmt.Println("Shutting down the executor")
+}
+
+func (exec *exampleExecutor) Error(driver exec.ExecutorDriver, err string) {
+	fmt.Println("Got error message:", err)
+}
+
 func (exec *exampleExecutor) LaunchTask(driver exec.ExecutorDriver, taskInfo *mesos.TaskInfo) {
 	fmt.Printf("Launching task %v with data [%#x]\n", taskInfo.GetName(), taskInfo.Data)
 
@@ -75,22 +91,6 @@ func (exec *exampleExecutor) LaunchTask(driver exec.ExecutorDriver, taskInfo *me
 		fmt.Println("Got error", err)
 	}
 	fmt.Println("Task finished", taskInfo.GetName())
-}
-
-func (exec *exampleExecutor) KillTask(exec.ExecutorDriver, *mesos.TaskID) {
-	fmt.Println("Kill task")
-}
-
-func (exec *exampleExecutor) FrameworkMessage(driver exec.ExecutorDriver, msg string) {
-	fmt.Println("Got framework message: ", msg)
-}
-
-func (exec *exampleExecutor) Shutdown(exec.ExecutorDriver) {
-	fmt.Println("Shutting down the executor")
-}
-
-func (exec *exampleExecutor) Error(driver exec.ExecutorDriver, err string) {
-	fmt.Println("Got error message:", err)
 }
 
 func init() {

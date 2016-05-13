@@ -4,29 +4,26 @@ import (
 	"net/http"
 	"strings"
 
-	log "github.com/golang/glog"
+	"fmt"
 )
 
-type HttpPathMapping struct {
-	HttpPath string
-	FilePath string
-}
+//ServeExecutorArtifact is called from main function
+func LaunchExecutorArtifactServer(address string, port int, filePath string) string {
+	httpPath := GetHttpPath(filePath)
 
-func registerHandler(fileToServe HttpPathMapping) {
-	log.Infof("httpPath: %v\n", fileToServe.HttpPath)
-	log.Infof("filePath: %v\n", fileToServe.FilePath)
+	serverURI := fmt.Sprintf("%s:%d", address, port)
+	hostURI := fmt.Sprintf("http://%s%s", serverURI, httpPath)
 
-	http.HandleFunc(fileToServe.HttpPath, func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, fileToServe.FilePath)
+	http.HandleFunc(httpPath, func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, httpPath)
 	})
+
+	go http.ListenAndServe(address, nil)
+
+	return hostURI
 }
 
-func registerHandlers(filesToServe []HttpPathMapping) {
-	for _, m := range filesToServe {
-		registerHandler(m)
-	}
-}
-
+// GetHttpPath returns from a "http://foobar:5000/<last>" a "/<last>"
 func GetHttpPath(path string) string {
 	// Create base path (http://foobar:5000/<base>)
 	pathSplit := strings.Split(path, "/")
@@ -38,24 +35,4 @@ func GetHttpPath(path string) string {
 	}
 
 	return "/" + base
-}
-
-func GetDefaultMappings(filePaths []string) []HttpPathMapping {
-	mappings := []HttpPathMapping{}
-
-	for _, f := range filePaths {
-		m := HttpPathMapping{
-			HttpPath: GetHttpPath(f),
-			FilePath: f,
-		}
-
-		mappings = append(mappings, m)
-	}
-
-	return mappings
-}
-
-func StartHttpServer(address string, filesToServe []HttpPathMapping) {
-	registerHandlers(filesToServe)
-	go http.ListenAndServe(address, nil)
 }

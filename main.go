@@ -20,18 +20,17 @@ package main
 
 import (
 	"flag"
-	"net"
 	"os"
-	"strconv"
 
 	"github.com/gogo/protobuf/proto"
 
 	log "github.com/golang/glog"
-	mesos "github.com/mesos/mesos-go/mesosproto"
-	util "github.com/mesos/mesos-go/mesosutil"
-	sched "github.com/mesos/mesos-go/scheduler"
-	. "github.com/mesosphere/mesos-framework-tutorial/scheduler"
-	. "github.com/mesosphere/mesos-framework-tutorial/server"
+	"github.com/mesos/mesos-go/mesosproto"
+	"github.com/mesos/mesos-go/mesosutil"
+	mesos_sched "github.com/mesos/mesos-go/scheduler"
+	"github.com/mesosphere/mesos-framework-tutorial/framework_scheduler"
+	"github.com/mesosphere/mesos-framework-tutorial/server"
+	"github.com/mesosphere/mesos-framework-tutorial/utils"
 )
 
 const (
@@ -53,43 +52,52 @@ func init() {
 	flag.Parse()
 }
 
-func main() {
-
-	// Start HTTP server hosting executor binary
-	uri := ServeExecutorArtifact(*address, *artifactPort, *executorPath)
-
-	// Executor
-	exec := prepareExecutorInfo(uri, getExecutorCmd(*executorPath))
-
-	// Scheduler
-	numTasks, err := strconv.Atoi(*taskCount)
+func handleError(err error) {
 	if err != nil {
-		log.Fatalf("Failed to convert '%v' to an integer with error: %v\n", taskCount, err)
+		log.Fatal(err)
 		os.Exit(-1)
 	}
+}
 
-	scheduler := NewExampleScheduler(exec, numTasks, CPUS_PER_TASK, MEM_PER_TASK)
-	if err != nil {
-		log.Fatalf("Failed to create scheduler with error: %v\n", err)
-		os.Exit(-2)
-	}
+func main() {
+
+	// Start HTTP server that statically hosts the executor binary file
+	// returns a "http://[host]:[port]/[executor_file_name]"
+	uri := server.LaunchExecutorArtifactServer(*address, *artifactPort, *executorPath)
+
+	// ./[executor_file_name]
+	executorCmd := utils.GetExecutorCmd(*executorPath)
+
+	// uri is "http://[host]:[port]/[executor_file_name]", executorCmd
+	// is ./[executor_file_name]
+	//Gets a ExecutorInfo
+	exec := prepareExecutorInfo(uri, executorCmd)
+
+	// Scheduler
+	// Gets an example scheduler that simply does logging of scheduling tasks
+	// (registered, disconnected, resource offer, slave lost, executor lost...
+	// Uses exec (./[executor_file_name]),
+	scheduler := framework_scheduler.NewExample(exec)
 
 	// Framework
-	fwinfo := &mesos.FrameworkInfo{
+	frameworkInfo := &mesosproto.FrameworkInfo{
 		User: proto.String(""), // Mesos-go will fill in user.
 		Name: proto.String("Test Framework (Go)"),
 	}
 
+	//Returns a net.IP object from a string address
+	ip := utils.ParseIP(*address)
+
 	// Scheduler Driver
-	config := sched.DriverConfig{
+	config := mesos_sched.DriverConfig{
 		Scheduler:      scheduler,
-		Framework:      fwinfo,
+		Framework:      frameworkInfo,
 		Master:         *master,
-		Credential:     (*mesos.Credential)(nil),
-		BindingAddress: parseIP(*address),
+		Credential:     (*mesosproto.Credential)(nil),
+		BindingAddress: ip,
 	}
 
-	driver, err := sched.NewMesosSchedulerDriver(config)
+	driver, err := mesos_sched.NewMesosSchedulerDriver(config)
 
 	if err != nil {
 		log.Fatalf("Unable to create a SchedulerDriver: %v\n", err.Error())
@@ -102,36 +110,29 @@ func main() {
 	}
 }
 
-func prepareExecutorInfo(uri string, cmd string) *mesos.ExecutorInfo {
-	executorUris := []*mesos.CommandInfo_URI{
+// prepareExecutorInfo receives uri like "http://[host]:[port]/[executor_file_name]"
+// and a cmd like "./[executor_file_name]" (last element of the uri)
+func prepareExecutorInfo(uri string, cmd string) *mesosproto.ExecutorInfo {
+	//TODO check what is this. Seems like it creates a CommandInfo_URI to hold
+	//TODO the value of http://[host]:[port]/[executor_file_name] and sets it
+	//TODO as an executable
+	executorUris := []*mesosproto.CommandInfo_URI{
 		{
 			Value:      &uri,
 			Executable: proto.Bool(true),
 		},
 	}
 
-	return &mesos.ExecutorInfo{
-		ExecutorId: util.NewExecutorID("default"),
+	// Fills an executor with hardcoded identifiers. The interesting thing is that
+	// it also creates a CommandInfo object with Value=./[executor_file_name] and
+	// Uris=[executorUris] which simply points to "http://[host]:[port]/[executor_file_name]"
+	return &mesosproto.ExecutorInfo{
+		ExecutorId: mesosutil.NewExecutorID("default"),
 		Name:       proto.String("Test Executor (Go)"),
 		Source:     proto.String("go_test"),
-		Command: &mesos.CommandInfo{
+		Command: &mesosproto.CommandInfo{
 			Value: proto.String(cmd),
 			Uris:  executorUris,
 		},
 	}
-}
-
-func getExecutorCmd(path string) string {
-	return "." + GetHttpPath(path)
-}
-
-func parseIP(address string) net.IP {
-	addr, err := net.LookupIP(address)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if len(addr) < 1 {
-		log.Fatalf("failed to parse IP from address '%v'", address)
-	}
-	return addr[0]
 }

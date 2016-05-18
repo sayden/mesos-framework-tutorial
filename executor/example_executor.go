@@ -21,8 +21,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 
-	exec "github.com/mesos/mesos-go/executor"
+	mesos_executor "github.com/mesos/mesos-go/executor"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 )
 
@@ -30,40 +31,8 @@ type exampleExecutor struct {
 	tasksLaunched int
 }
 
-func newExampleExecutor() *exampleExecutor {
-	return &exampleExecutor{tasksLaunched: 0}
-}
-
-func (exec *exampleExecutor) Registered(driver exec.ExecutorDriver, execInfo *mesos.ExecutorInfo, fwinfo *mesos.FrameworkInfo, slaveInfo *mesos.SlaveInfo) {
-	fmt.Println("Registered Executor on slave ", slaveInfo.GetHostname())
-}
-
-func (exec *exampleExecutor) Reregistered(driver exec.ExecutorDriver, slaveInfo *mesos.SlaveInfo) {
-	fmt.Println("Re-registered Executor on slave ", slaveInfo.GetHostname())
-}
-
-func (exec *exampleExecutor) Disconnected(exec.ExecutorDriver) {
-	fmt.Println("Executor disconnected.")
-}
-
-func (exec *exampleExecutor) KillTask(exec.ExecutorDriver, *mesos.TaskID) {
-	fmt.Println("Kill task")
-}
-
-func (exec *exampleExecutor) FrameworkMessage(driver exec.ExecutorDriver, msg string) {
-	fmt.Println("Got framework message: ", msg)
-}
-
-func (exec *exampleExecutor) Shutdown(exec.ExecutorDriver) {
-	fmt.Println("Shutting down the executor")
-}
-
-func (exec *exampleExecutor) Error(driver exec.ExecutorDriver, err string) {
-	fmt.Println("Got error message:", err)
-}
-
-func (exec *exampleExecutor) LaunchTask(driver exec.ExecutorDriver, taskInfo *mesos.TaskInfo) {
-	fmt.Printf("Launching task %v with data [%#x]\n", taskInfo.GetName(), taskInfo.Data)
+func (exec *exampleExecutor) LaunchTask(driver mesos_executor.ExecutorDriver, taskInfo *mesos.TaskInfo) {
+	fmt.Printf("Launching task id: %s - %v with data [%#x]\n", taskInfo.GetTaskId().Value, taskInfo.GetName(), taskInfo.Data)
 
 	runStatus := &mesos.TaskStatus{
 		TaskId: taskInfo.GetTaskId(),
@@ -76,9 +45,13 @@ func (exec *exampleExecutor) LaunchTask(driver exec.ExecutorDriver, taskInfo *me
 
 	exec.tasksLaunched++
 	fmt.Println("Total tasks launched ", exec.tasksLaunched)
-	//
-	// this is where one would perform the requested task
-	//
+
+	d1 := []byte("hello\ngo\n")
+	err = ioutil.WriteFile("/tmp/dat1", d1, 0644)
+	if err != nil {
+		fmt.Errorf("error writing file %s", err.Error())
+		driver.Stop()
+	}
 
 	// finish task
 	fmt.Println("Finishing task", taskInfo.GetName())
@@ -93,6 +66,7 @@ func (exec *exampleExecutor) LaunchTask(driver exec.ExecutorDriver, taskInfo *me
 	fmt.Println("Task finished", taskInfo.GetName())
 }
 
+//init parses the flags passed by the command line
 func init() {
 	flag.Parse()
 }
@@ -100,10 +74,10 @@ func init() {
 func main() {
 	fmt.Println("Starting Example Executor (Go)")
 
-	dconfig := exec.DriverConfig{
-		Executor: newExampleExecutor(),
+	dconfig := mesos_executor.DriverConfig{
+		Executor: &exampleExecutor{tasksLaunched: 0},
 	}
-	driver, err := exec.NewMesosExecutorDriver(dconfig)
+	driver, err := mesos_executor.NewMesosExecutorDriver(dconfig)
 
 	if err != nil {
 		fmt.Println("Unable to create a ExecutorDriver ", err.Error())
@@ -116,4 +90,32 @@ func main() {
 	}
 	fmt.Println("Executor process has started and running.")
 	driver.Join()
+}
+
+func (exec *exampleExecutor) Registered(driver mesos_executor.ExecutorDriver, execInfo *mesos.ExecutorInfo, fwinfo *mesos.FrameworkInfo, slaveInfo *mesos.SlaveInfo) {
+	fmt.Println("Registered Executor on slave ", slaveInfo.GetHostname())
+}
+
+func (exec *exampleExecutor) Reregistered(driver mesos_executor.ExecutorDriver, slaveInfo *mesos.SlaveInfo) {
+	fmt.Println("Re-registered Executor on slave ", slaveInfo.GetHostname())
+}
+
+func (exec *exampleExecutor) Disconnected(mesos_executor.ExecutorDriver) {
+	fmt.Println("Executor disconnected.")
+}
+
+func (exec *exampleExecutor) KillTask(mesos_executor.ExecutorDriver, *mesos.TaskID) {
+	fmt.Println("Kill task")
+}
+
+func (exec *exampleExecutor) FrameworkMessage(driver mesos_executor.ExecutorDriver, msg string) {
+	fmt.Println("Got framework message: ", msg)
+}
+
+func (exec *exampleExecutor) Shutdown(mesos_executor.ExecutorDriver) {
+	fmt.Println("Shutting down the executor")
+}
+
+func (exec *exampleExecutor) Error(driver mesos_executor.ExecutorDriver, err string) {
+	fmt.Println("Got error message:", err)
 }

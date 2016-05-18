@@ -37,7 +37,6 @@ const (
 	CPUS_PER_TASK       = 1
 	MEM_PER_TASK        = 128
 	defaultArtifactPort = 12345
-	defaultImage        = "http://www.gabrielhartmann.com/Things/Plants/i-W2N2Rxp/0/O/DSCF6636.jpg"
 )
 
 var (
@@ -60,7 +59,6 @@ func handleError(err error) {
 }
 
 func main() {
-
 	// Start HTTP server that statically hosts the executor binary file
 	// returns a "http://[host]:[port]/[executor_file_name]"
 	uri := server.LaunchExecutorArtifactServer(*address, *artifactPort, *executorPath)
@@ -82,7 +80,7 @@ func main() {
 	// Framework
 	frameworkInfo := &mesosproto.FrameworkInfo{
 		User: proto.String(""), // Mesos-go will fill in user.
-		Name: proto.String("Test Framework (Go)"),
+		Name: proto.String("Stratio Test Framework (Go)"),
 	}
 
 	//Returns a net.IP object from a string address
@@ -127,8 +125,8 @@ func prepareExecutorInfo(uri string, cmd string) *mesosproto.ExecutorInfo {
 	// it also creates a CommandInfo object with Value=./[executor_file_name] and
 	// Uris=[executorUris] which simply points to "http://[host]:[port]/[executor_file_name]"
 	return &mesosproto.ExecutorInfo{
-		ExecutorId: mesosutil.NewExecutorID("default"),
-		Name:       proto.String("Test Executor (Go)"),
+		ExecutorId: mesosutil.NewExecutorID("Stratio"),
+		Name:       proto.String("Stratio Executor (Go)"),
 		Source:     proto.String("go_test"),
 		Command: &mesosproto.CommandInfo{
 			Value: proto.String(cmd),

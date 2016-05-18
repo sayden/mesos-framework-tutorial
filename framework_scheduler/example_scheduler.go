@@ -1,51 +1,64 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+* Licensed to the Apache Software Foundation (ASF) under one
+* or more contributor license agreements.  See the NOTICE file
+* distributed with this work for additional information
+* regarding copyright ownership.  The ASF licenses this file
+* to you under the Apache License, Version 2.0 (the
+* "License"); you may not use this file except in compliance
+* with the License.  You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
  */
 
 package framework_scheduler
 
 import (
+	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"github.com/gogo/protobuf/proto"
 	log "github.com/golang/glog"
 	mesos "github.com/mesos/mesos-go/mesosproto"
-	sched "github.com/mesos/mesos-go/scheduler"
 	util "github.com/mesos/mesos-go/mesosutil"
-	"fmt"
+	sched "github.com/mesos/mesos-go/scheduler"
+	payload "github.com/mesosphere/mesos-framework-tutorial/payload"
 )
 
 type ExampleScheduler struct {
 	executor      *mesos.ExecutorInfo
 	tasksLaunched int
 	tasksFinished int
+	totalTasks    int
+	images        []string
 	cpuPerTask    float64
 	memPerTask    float64
-	totalTasks int
+	serverAddress string
 }
 
-func NewExample(exec *mesos.ExecutorInfo) *ExampleScheduler {
+func NewExampleScheduler(exec *mesos.ExecutorInfo, cpuPerTask float64, memPerTask float64, serverAddress string) (*ExampleScheduler, error) {
+	images, err := readLines("images")
+	if err != nil {
+		log.Errorf("Failed to read image list with error: %v\n", err)
+		return nil, err
+	}
+
 	return &ExampleScheduler{
 		executor:      exec,
 		tasksLaunched: 0,
 		tasksFinished: 0,
-		cpuPerTask:    1,
-		memPerTask:    512,
-	}
+		totalTasks:    len(images),
+		images:        images,
+		cpuPerTask:    cpuPerTask,
+		memPerTask:    memPerTask,
+		serverAddress: serverAddress,
+	}, nil
 }
 
 func (sched *ExampleScheduler) Registered(driver sched.SchedulerDriver, frameworkId *mesos.FrameworkID, masterInfo *mesos.MasterInfo) {
@@ -61,13 +74,12 @@ func (sched *ExampleScheduler) Disconnected(sched.SchedulerDriver) {
 }
 
 func (sched *ExampleScheduler) ResourceOffers(driver sched.SchedulerDriver, offers []*mesos.Offer) {
+	log.Infoln("ResourceOffers called")
 	logOffers(offers)
 
 	if sched.tasksLaunched >= sched.totalTasks {
 		return
 	}
-
-	println("OFFER!")
 
 	for _, offer := range offers {
 		remainingCpus := getOfferCpu(offer)
@@ -81,7 +93,18 @@ func (sched *ExampleScheduler) ResourceOffers(driver sched.SchedulerDriver, offe
 			sched.tasksLaunched < sched.totalTasks {
 
 			log.Infof("Processing image %v of %v\n", sched.tasksLaunched, sched.totalTasks)
-			fileName := "my_framework"
+
+			// Build payload
+			fileName := sched.images[sched.tasksLaunched]
+			payld := payload.TaskPayload{fileName, sched.serverAddress}
+			log.Infof("Payload In: %v\n", payld)
+
+			b, err := json.Marshal(payld)
+			if err != nil {
+				log.Errorf("Failed to marshal payload with error: %v\n", err)
+				return
+			}
+
 			sched.tasksLaunched++
 
 			taskId := &mesos.TaskID{
@@ -97,7 +120,7 @@ func (sched *ExampleScheduler) ResourceOffers(driver sched.SchedulerDriver, offe
 					util.NewScalarResource("cpus", sched.cpuPerTask),
 					util.NewScalarResource("mem", sched.memPerTask),
 				},
-				Data: []byte(fileName),
+				Data: b,
 			}
 			log.Infof("Prepared task: %s with offer %s for launch\n", task.GetName(), offer.Id.GetValue())
 
@@ -112,6 +135,27 @@ func (sched *ExampleScheduler) ResourceOffers(driver sched.SchedulerDriver, offe
 
 func (sched *ExampleScheduler) StatusUpdate(driver sched.SchedulerDriver, status *mesos.TaskStatus) {
 	log.Infoln("Status update: task", status.TaskId.GetValue(), " is in state ", status.State.Enum().String())
+
+	if status.GetState() == mesos.TaskState_TASK_FINISHED {
+		sched.tasksFinished++
+		log.Infof("%v of %v tasks finished.", sched.tasksFinished, sched.totalTasks)
+	}
+
+	if sched.tasksFinished >= sched.totalTasks {
+		log.Infoln("Total tasks completed, stopping framework.")
+		driver.Stop(false)
+	}
+
+	if status.GetState() == mesos.TaskState_TASK_LOST ||
+		status.GetState() == mesos.TaskState_TASK_KILLED ||
+		status.GetState() == mesos.TaskState_TASK_FAILED {
+		log.Infoln(
+			"Aborting because task", status.TaskId.GetValue(),
+			"is in unexpected state", status.State.String(),
+			"with message", status.GetMessage(),
+		)
+		driver.Abort()
+	}
 }
 
 func (sched *ExampleScheduler) OfferRescinded(s sched.SchedulerDriver, id *mesos.OfferID) {

@@ -20,6 +20,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"net"
 	"os"
 
 	"github.com/gogo/protobuf/proto"
@@ -28,9 +30,9 @@ import (
 	"github.com/mesos/mesos-go/mesosproto"
 	"github.com/mesos/mesos-go/mesosutil"
 	mesos_sched "github.com/mesos/mesos-go/scheduler"
-	"github.com/mesosphere/mesos-framework-tutorial/framework_scheduler"
 	"github.com/mesosphere/mesos-framework-tutorial/server"
 	"github.com/mesosphere/mesos-framework-tutorial/utils"
+	"github.com/mesosphere/mesos-framework-tutorial/framework_scheduler"
 )
 
 const (
@@ -72,10 +74,13 @@ func main() {
 	exec := prepareExecutorInfo(uri, executorCmd)
 
 	// Scheduler
-	// Gets an example scheduler that simply does logging of scheduling tasks
-	// (registered, disconnected, resource offer, slave lost, executor lost...
-	// Uses exec (./[executor_file_name]),
-	scheduler := framework_scheduler.NewExample(exec)
+	httpServerAddress := fmt.Sprintf("http://%s:%d", *address, *artifactPort)
+	log.Infof("ServerAdress: %v\n", httpServerAddress)
+	scheduler, err := framework_scheduler.NewExampleScheduler(exec, CPUS_PER_TASK, MEM_PER_TASK, httpServerAddress)
+	if err != nil {
+		log.Fatalf("Failed to create scheduler with error: %v\n", err)
+		os.Exit(-2)
+	}
 
 	// Framework
 	frameworkInfo := &mesosproto.FrameworkInfo{
@@ -133,4 +138,19 @@ func prepareExecutorInfo(uri string, cmd string) *mesosproto.ExecutorInfo {
 			Uris:  executorUris,
 		},
 	}
+}
+
+func getExecutorCmd(path string) string {
+	return "." + server.GetHttpPath(path)
+}
+
+func parseIP(address string) net.IP {
+	addr, err := net.LookupIP(address)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if len(addr) < 1 {
+		log.Fatalf("failed to parse IP from address '%v'", address)
+	}
+	return addr[0]
 }

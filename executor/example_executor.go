@@ -1,30 +1,31 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+* Licensed to the Apache Software Foundation (ASF) under one
+* or more contributor license agreements.  See the NOTICE file
+* distributed with this work for additional information
+* regarding copyright ownership.  The ASF licenses this file
+* to you under the Apache License, Version 2.0 (the
+* "License"); you may not use this file except in compliance
+* with the License.  You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
  */
 
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 
 	mesos_executor "github.com/mesos/mesos-go/executor"
 	mesos "github.com/mesos/mesos-go/mesosproto"
+	payload "github.com/mesosphere/mesos-framework-tutorial/payload"
 )
 
 type exampleExecutor struct {
@@ -46,14 +47,37 @@ func (exec *exampleExecutor) LaunchTask(driver mesos_executor.ExecutorDriver, ta
 	exec.tasksLaunched++
 	fmt.Println("Total tasks launched ", exec.tasksLaunched)
 
-	d1 := []byte("hello\ngo\n")
-	err = ioutil.WriteFile("/tmp/dat1", d1, 0644)
+	// Decode payload
+	var decodedPayload payload.TaskPayload
+	err = json.Unmarshal(taskInfo.Data, &decodedPayload)
+	fmt.Printf("Payload Out: %v\n", decodedPayload)
+
+	// Download image
+	fileName, err := downloadImage(string(decodedPayload.FileName))
 	if err != nil {
-		fmt.Errorf("error writing file %s", err.Error())
-		driver.Stop()
+		fmt.Printf("Failed to download image '%v' with error: %v\n", fileName, err)
+		return
+	}
+	fmt.Printf("Downloaded image: %v\n", fileName)
+
+	// Process image
+	fmt.Printf("Processing image: %v\n", fileName)
+	outFile, err := procImage(fileName)
+	if err != nil {
+		fmt.Printf("Failed to process image with error: %v\n", err)
+		return
 	}
 
-	// finish task
+	// Upload image
+	fmt.Printf("Uploading image: %v\n", outFile)
+	if err = uploadImage(decodedPayload.HttpServerAddress, outFile); err != nil {
+		fmt.Printf("Failed to upload image with error: %v\n", err)
+		return
+	} else {
+		fmt.Printf("Uploaded image: %v\n", outFile)
+	}
+
+	// Finish task
 	fmt.Println("Finishing task", taskInfo.GetName())
 	finStatus := &mesos.TaskStatus{
 		TaskId: taskInfo.GetTaskId(),
@@ -62,7 +86,9 @@ func (exec *exampleExecutor) LaunchTask(driver mesos_executor.ExecutorDriver, ta
 	_, err = driver.SendStatusUpdate(finStatus)
 	if err != nil {
 		fmt.Println("Got error", err)
+		return
 	}
+
 	fmt.Println("Task finished", taskInfo.GetName())
 }
 

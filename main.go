@@ -74,6 +74,9 @@ func main() {
 	exec := prepareExecutorInfo(uri, executorCmd)
 
 	// Scheduler
+	// Gets an example scheduler that simply does logging of scheduling tasks
+	// (registered, disconnected, resource offer, slave lost, executor lost...
+	// Uses exec (./[executor_file_name]),
 	httpServerAddress := fmt.Sprintf("http://%s:%d", *address, *artifactPort)
 	log.Infof("ServerAdress: %v\n", httpServerAddress)
 	scheduler, err := framework_scheduler.NewExampleScheduler(exec, CPUS_PER_TASK, MEM_PER_TASK, httpServerAddress)

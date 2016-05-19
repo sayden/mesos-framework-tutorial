@@ -19,9 +19,12 @@
 package framework_scheduler
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"strconv"
+
+	"os"
 
 	"github.com/gogo/protobuf/proto"
 	log "github.com/golang/glog"
@@ -53,7 +56,7 @@ func NewExampleScheduler(exec *mesos.ExecutorInfo, cpuPerTask float64, memPerTas
 		executor:      exec,
 		tasksLaunched: 0,
 		tasksFinished: 0,
-		totalTasks:    len(images),
+		totalTasks:    5,
 		images:        images,
 		cpuPerTask:    cpuPerTask,
 		memPerTask:    memPerTask,
@@ -176,4 +179,46 @@ func (sched *ExampleScheduler) ExecutorLost(s sched.SchedulerDriver, exId *mesos
 
 func (sched *ExampleScheduler) Error(driver sched.SchedulerDriver, err string) {
 	log.Infoln("Scheduler received error:", err)
+}
+
+func getOfferScalar(offer *mesos.Offer, name string) float64 {
+	resources := util.FilterResources(offer.Resources, func(res *mesos.Resource) bool {
+		return res.GetName() == name
+	})
+
+	value := 0.0
+	for _, res := range resources {
+		value += res.GetScalar().GetValue()
+	}
+
+	return value
+}
+
+func getOfferCpu(offer *mesos.Offer) float64 {
+	return getOfferScalar(offer, "cpus")
+}
+
+func getOfferMem(offer *mesos.Offer) float64 {
+	return getOfferScalar(offer, "mem")
+}
+
+func logOffers(offers []*mesos.Offer) {
+	for _, offer := range offers {
+		log.Infof("Received Offer <%v> with cpus=%v mem=%v", offer.Id.GetValue(), getOfferCpu(offer), getOfferMem(offer))
+	}
+}
+
+func readLines(path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	return lines, scanner.Err()
 }
